@@ -2,7 +2,10 @@
 title: 'Peer Graded Assignment: Week 4 Machine Learning'
 author: "Nicole Lakens"
 date: "4 oktober 2019"
-output: html_document
+output: 
+  html_document: 
+    fig_caption: yes
+    keep_md: yes
 ---
 
 ```{r setup, include=FALSE}

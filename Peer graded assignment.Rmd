@@ -1,0 +1,211 @@
+---
+title: 'Peer Graded Assignment: Week 4 Machine Learning'
+author: "Nicole Lakens"
+date: "4 oktober 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Description of the project
+
+## Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). The data for this project come from this source: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har.
+
+## What I should submit
+
+The goal of my project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. We can use any of the other variables to predict with. I should create a report describing how I built the model, how I used cross validation, what I think the expected out of sample error is, and why I made the choices I did. I will also use my prediction model to predict 20 different test cases.
+
+# Building the model
+
+## Used packages
+
+First, I make sure the packages that I will be using are active.
+
+
+```{r packages}
+library(RANN)
+library(dplyr)
+library(caret)
+```
+
+## Reading in the data and check how it looks
+
+I did this twice because I found out that some variables had text in it like "#DIV/0". So I added the "na.strings"-syntax to the read.csv.
+
+```{r reading_checking_data}
+training <- read.csv("C:/Users/nlake/Downloads/pml-training.csv", na.strings = c("NA", "", "#DIV/0!"))
+testing <- read.csv("C:/Users/nlake/Downloads/pml-testing.csv", na.strings = c("NA", "", "#DIV/0!"))
+
+summary(training)
+head(training)
+table(training$classe)
+
+```
+
+## Deleting variables
+
+Column X is a row indicator; let's delete this one. User name cannot be a predictor in this model; let's delete the user name.
+A timestamp does not look like a variable that can predict a movement; let's delete the variables that we will not use. 
+
+```{r delete_vars}
+training$X <- NULL
+testing$X <- NULL
+
+training$user_name <- NULL
+testing$user_name <- NULL
+
+training$raw_timestamp_part_1 <- NULL
+testing$raw_timestamp_part_1 <- NULL
+
+
+training$raw_timestamp_part_2 <- NULL
+testing$raw_timestamp_part_2 <- NULL
+
+
+training$cvtd_timestamp <- NULL
+testing$cvtd_timestamp <- NULL
+
+
+training$new_window <- NULL
+testing$new_window <- NULL
+
+
+training$num_window <- NULL
+testing$num_window <- NULL
+```
+
+## Splitting the trainingset
+
+Split the trainingset in a trainingset and validationset, so that we can calculate the out of sample errorrate.
+
+```{r split}
+set.seed(800)
+partit <- createDataPartition(y=training$classe, p=0.75, list=FALSE)
+training_part <- training[partit, ]
+validation_part <- training[-partit, ]
+```
+
+## Check the distribution of the var to be predicted
+
+Create a table and a plot so we can see how the classe-variable is distributed.
+
+```{r plot}
+table(training_part$classe)
+table(training_part$classe)/nrow(training_part)
+plot(training_part$classe)
+```
+
+## Imputation and (near) zero variance variables
+
+Check if NA's are present in the dataset.
+
+```{r nas}
+table(is.na(training_part))
+```
+
+Yes, there are NA's, so we have to impute the NA's. I am using the preprocess function from Caret to impute the NA's. I will also remove zero variance and near zero variance columns.
+```{r nzv}
+nzv <- nearZeroVar(training_part)
+nzv
+training_part <- training_part[,-nzv]
+validation_part <- validation_part[,-nzv]
+testing_part <- testing[,-nzv]
+
+preproc <- preProcess(training_part, method = c('medianImpute'))
+preproc
+```
+
+Recreate dataset with imputed values. Same with the validation-data and the testing-data.
+
+```{r predict_preproc}
+training_pp<- predict(preproc, training_part)
+validation_pp<- predict(preproc, validation_part)
+testing_pp<- predict(preproc, testing_part)
+```
+
+Also, set the classe-variable as factor.
+
+```{r fact}
+training_pp$classe <- as.factor(training_pp$classe)
+validation_pp$classe <- as.factor(validation_pp$classe)
+testing_pp$Classe <- c('')
+```
+
+## The model
+
+The k-fold cross validation method involves splitting the dataset into k-subsets. For each subset is held
+out while the model is trained on all other subsets. This process is completed until accuracy is determine
+for each instance in the dataset, and an overall accuracy estimate is provided. It is a robust method for
+estimating accuracy, and the size of k and tune the amount of bias in the estimate,
+with popular values set to 3, 5, 7 and 10.
+
+I will be building a random forest using Caret; I changed the default number of trees from 500 to 100 because of the limited capacity of my laptop. For the same reason, I used 3 folds.
+
+```{r model}
+train_control <- trainControl(method="cv", number=3)
+
+model <- train(classe~., data=training_pp, method="rf", trainControl=train_control, ntree = 100)
+
+model
+
+pred <- predict(model)
+
+varImp(model)
+```
+
+## Confusion matrix for training set
+
+To check how the model performs on the training set, we will create a confusion matrix.
+
+```{r cf_training}
+cf <- caret::confusionMatrix(pred,training_pp$classe)
+cf
+```
+
+```{r training_errorrate}
+training_errorrate<- 1-cf$overall[[1]]
+```
+
+The error rate for the training set is `r training_errorrate`.
+
+## Apply to validation set
+
+Now we use our model to predict the validation set; in this way, we can see what our expected out of sample error rate. We will create the confusionmatrix to do so.
+
+```{r predict_val}
+
+val_pred <- predict(model, newdata = validation_pp)
+cf_val<- caret::confusionMatrix(val_pred, validation_pp$classe)
+cf_val
+```
+```{r val_errorrate}
+val_errorrate <- 1-cf_val$overall[[1]]
+val_errorrate
+```
+
+The out of sample error rate is `r val_errorrate`. So this is the errorrate we can expect to see when predicting to another unseen dataset.
+
+## Apply to testing set
+
+The last part of the project is to predict 20 testcases.
+
+```{r pred_test}
+testing_pred <- predict(model, newdata = testing_pp)
+testing_pred
+```
+
+
+# Thank you for reviewing my project :-) 
+
+
+
+
+
+
+
+
+
+
